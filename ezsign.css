@@ -1,0 +1,33 @@
+HTML {
+	PADDING-RIGHT: 1cm; PADDING-LEFT: 1cm; PADDING-BOTTOM: 1cm; MARGIN: 0px; 
+	BORDER-LEFT: #336699 1cm solid; LINE-HEIGHT: 1.3; PADDING-TOP: 1cm
+}
+BODY {
+	TEXT-ALIGN: justify; color: #003366; 
+}
+.insetquote {
+	PADDING-RIGHT: 0.5em; BORDER-TOP: black thin solid; DISPLAY: block; PADDING-LEFT: 0.5em; FONT-SIZE: medium; 
+	FLOAT: right; PADDING-BOTTOM: 0.5em; MARGIN: 0.3em 0px 0.1em 0.5em; WIDTH: 40%; PADDING-TOP: 0.5em;
+	BORDER-BOTTOM: black thin solid; FONT-FAMILY: sans-serif; BACKGROUND-COLOR: #ddd; TEXT-ALIGN: left
+}
+.insetquoteleft {
+	PADDING-RIGHT: 0.5em; BORDER-TOP: black thin solid; DISPLAY: block; PADDING-LEFT: 0.5em; FONT-SIZE: medium; 
+	FLOAT: left; PADDING-BOTTOM: 0.5em; MARGIN: .3em 0.5em 0.1em 0px; WIDTH: 40%; PADDING-TOP: 0.5em; 
+	BORDER-BOTTOM: black thin solid; FONT-FAMILY: sans-serif; BACKGROUND-COLOR: #ddd; TEXT-ALIGN: left
+}
+H1 {
+	FONT-WEIGHT: bold; FONT-SIZE: large; FONT-FAMILY: Verdana;
+	TEXT-ALIGN: center
+}
+H2 {
+	FONT-WEIGHT: normal; FONT-SIZE: large; BORDER-BOTTOM: black thin solid; FONT-FAMILY: Verdana; LETTER-SPACING: -0.08em
+}
+H3 {
+	FONT-FAMILY: sans-serif; LETTER-SPACING: 0.2ex
+}
+UL {
+	MARGIN-TOP: -0.8em
+}
+LI {
+	MARGIN-BOTTOM: 0.4em; LINE-HEIGHT: 1.1
+}
