@@ -1,7 +1,7 @@
 # Perl package to permit the controlling of Adaptive scrolling LED displays.
 # Visit http://www.ams-i.com/ for information about their products.
 #
-# $Id: ezsign.pm,v 1.5 2001/11/12 07:13:26 jlawson Exp $
+# $Id: ezsign.pm,v 1.6 2001/11/12 16:56:39 jlawson Exp $
 #
 # Win32::SerialPort and Device::SerialPort can both be obtained from
 #     http://members.aol.com/Bbirthisel/alpha.html
@@ -94,7 +94,7 @@ use vars qw($VERSION $OS_win $Debugging
 
 
 # The version number of the package is derived from the RCS file version.
-$VERSION = sprintf("%d.%02d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/);
 
 # Load the appropriate package for serial port communications.
 BEGIN {
@@ -447,10 +447,13 @@ Examples:
 sub SendTextSimple {    # (self, arghash)
    my $self = shift || die "no self";
    my %arghash;
-   if (scalar(@_) >= 1 && ref $_ eq 'HASH') {
+
+   if (scalar(@_) > 1) {
       %arghash = @_;
+   #} elsif (ref($_[0]) eq 'HASH') {
+   #   %arghash = %$(shift);
    } else {
-      $arghash{'text'} = join('', @_);
+      $arghash{'text'} = shift;
    }
 
    # file label to write text into.
