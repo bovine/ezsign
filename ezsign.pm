@@ -1,7 +1,7 @@
 # Perl package to permit the controlling of Adaptive scrolling LED displays.
 # Visit http://www.ams-i.com/ for information about their products.
 #
-# $Id: ezsign.pm,v 1.4 2001/11/12 06:17:31 jlawson Exp $
+# $Id: ezsign.pm,v 1.5 2001/11/12 07:13:26 jlawson Exp $
 #
 # Win32::SerialPort and Device::SerialPort can both be obtained from
 #     http://members.aol.com/Bbirthisel/alpha.html
@@ -49,16 +49,35 @@ to be daisy-chained and assigned unique addresses so that they can be
 programmed individually or by groups, this library was not designed for
 that usage scenario.
 
+The sign has several kilobytes (such as 32kb for the SERIES 300) of persistent
+memory that is used to store all of the TEXT files, STRING files, and
+DOT graphics.  There are a total of 95 possible "file label" slots, which
+are given one-character ASCII names in the range of 0x20 through 0x7E inclusive.
+Each of these file labels can be used for one of the three purposes
+already mentioned, but changing the designated purpose of a file label
+will erase its contents.
+
+The size of each file label is specified at the time its purpose is
+configured and the memory used for its storage is taken from the total
+amount of persistent memory available on the device.  Message files
+cannot be written to any files (other than "0" or "A") until memory is
+explicitly allocated for that file label using the Set Memory
+Configuration command.
+
 File label "0" is used for Priority messages and is pre-configured to
 use a set region of memory outside of the Memory Pool.  When data is
 written to the Priority message file, all other text files will stop
 being displayed.  When the Priority message file is erased, then normal
 display of other text files will resume.  The Priority message file
-is limited to 125 characters.
+is limited to 125 characters.  The size, purpose, and operating hours
+of the Priority message file cannot be reconfigured.
 
-Message files cannot be written to any files (other than "0" or "A")
-until memory is allocated for the file using the Set Memory Configuration
-command.
+The normal operational cycle of the sign is to display all TEXT file
+labels in sequence, unless there exists a Priority message (stored in
+file label "0").  File labels that do not contain TEXT are ignored.
+File labels that are configured to only be displayed at certain times
+of the date or days of the week are also ignored.
+
 
 =head1 METHODS
 
@@ -75,7 +94,7 @@ use vars qw($VERSION $OS_win $Debugging
 
 
 # The version number of the package is derived from the RCS file version.
-$VERSION = sprintf("%d.%02d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.5 $ =~ /(\d+)\.(\d+)/);
 
 # Load the appropriate package for serial port communications.
 BEGIN {
@@ -212,9 +231,9 @@ $ESCAPE = "\x1b";
 =item $sign = ezsign->new($port);
 
 Constructor for the communications object.  Returns a reference to a
-ezsign object.  On Windows, this will typically be "COM1" or "COM2"
-or similar.  On UNIX, this will be the serial port device file, such
-as "/dev/cua1"
+ezsign object.  On Windows, the C<$port> will typically be "COM1" or "COM2"
+or similar.  On UNIX, C<$port> will be the serial port device filename,
+such as "/dev/cua1"
 
 =cut
 
@@ -256,11 +275,6 @@ sub _CommandReadText {
    return "B" . $filenumber;
 }
 
-sub _CommandEnableSpeaker {
-   my $enable = shift;
-   return "E" . "\x21" . ($enable ? "00" : "FF");
-}
-
 sub _CommandSetMemoryConfiguration {
    my ($filenumber, $filetype, $protected, $size, $extra1, $extra2) = @_;
    if ($filetype eq 'text') {
@@ -300,6 +314,11 @@ sub _CommandSetDate {
 sub _CommandSetTimeFormat {
    my $use24hour = shift;
    return "E" . "\x27" . ($use24hour ? "M" : "S");
+}
+
+sub _CommandEnableSpeaker {
+   my $enable = shift;
+   return "E" . "\x21" . ($enable ? "00" : "FF");
 }
 
 sub _CommandGenerateSpeakerTone {
@@ -395,44 +414,6 @@ sub _ComputeChecksum {
    return sprintf("%04X", $checksum);
 }
 
-
-=item $sign->SendTextFilePreformatted( 'file' => $file_id,
-                                       'rawtext' => $preformatted_text );
-
-Public method used to send new pre-formatted text files to the sign.
-This method expects that the C<$preformatted_text> already contains the embedded
-escape codes that indicate the position, mode, or other display attributes
-for the text.  The argument C<$file_id> must be a valid file label and must
-be large enough to store the entire block of text.
-
-Example:
-
-  $sign->SendTextFilePreformatted( 'file' => 'A',
-        'rawtext' => "\x1b\x20\x62" . "hello world" );
-
-=cut
-
-sub SendTextFilePreformatted {    # (self, arghash)
-   my $self = shift || die "no self";
-   my %arghash = @_;
-
-   # file label to write text into.
-   my $filenumber = $arghash{'file'};
-   $filenumber = "0" if !defined $filenumber;
-   die "invalid file label" if !_IsValidFileLabel($filenumber);
-
-   # The text that should actually be displayed.
-   # Allowable to be undef or empty, when the textfile should be erased.
-   my $text = $arghash{'rawtext'};
-   $text = "" if !defined $text;
-
-   # format the command buffer and send it.
-   my $rawcommand = _CommandSetText($filenumber, $text);
-   $self->_SendRawCommand($rawcommand);
-}
-
-
-
 =item $sign->SendTextSimple(...);
 
 Public method used to send new simple text files to the sign.
@@ -466,10 +447,10 @@ Examples:
 sub SendTextSimple {    # (self, arghash)
    my $self = shift || die "no self";
    my %arghash;
-   if (scalar(@_) > 1 || ref $_ eq 'HASH') {
+   if (scalar(@_) >= 1 && ref $_ eq 'HASH') {
       %arghash = @_;
    } else {
-      $arghash{'text'} = shift;
+      $arghash{'text'} = join('', @_);
    }
 
    # file label to write text into.
@@ -494,6 +475,87 @@ sub SendTextSimple {    # (self, arghash)
    $self->SendTextFilePreformatted( 'file' => $filenumber,
                                     'rawtext' => $rawtext);
 }
+
+
+=item $sign->SendTextFilePreformatted( 'file' => $file_label,
+                                       'rawtext' => $preformatted_text,
+                                       ... );
+
+Public method used to send new pre-formatted text files to the sign.
+This method expects that the C<$preformatted_text> already contains the embedded
+escape codes that indicate the position, mode, or other display attributes
+for the text.
+
+The C<$preformatted_text> argument may be undef or empty if you want to
+erase the specified text file, although the C<ezsign::ClearTextFile>
+method provides a more convenient way to do this.
+
+The argument C<$file_label> must be a valid single-character file label and
+must be large enough to store the entire block of text.  By default, this
+method automatically reconfigures allocated memory on the sign so that the
+file label will be just large enough for the new block of text.  This
+automatic reconfiguring can be supressed by supplying: 'autoconfigure' => 0.
+
+As a side effect of resizing memory, the protection and configured operating
+times of the text file will be reset.  If this is not desirable then the
+'autoconfigure' option (described above) can be used to supress this behavior.
+Alternatively, the new protection that should be used can be explicitly
+specified with the 'protected' option.  (There is currently no way to specify
+the new operating times of the text file used during autoconfiguring.)
+
+Example:
+
+  # sets the designated file text (with automatic resizing
+  # and no protection, by default).
+  $sign->SendTextFilePreformatted( 'file' => 'A',
+        'rawtext' => "\x1b\x20\x62" . "hello world" );
+
+  # same but does not automatically resize memory.
+  $sign->SendTextFilePreformatted( 'file' => 'A',
+        'rawtext' => "\x1b\x20\x62" . "hello world",
+        'autoconfigure' => 0 );
+
+  # explicitly resizes memory and ensures that the text is
+  # protected from being changed via the remote control.
+  $sign->SendTextFilePreformatted( 'file' => 'A',
+        'rawtext' => "\x1b\x20\x62" . "hello world",
+        'autoconfigure' => 1,
+        'protected' => 1 );
+
+=cut
+
+sub SendTextFilePreformatted {    # (self, arghash)
+   my $self = shift || die "no self";
+   my %arghash = @_;
+
+   # determine if we should automatically configure memory for the text.
+   my $autoconfigure = $arghash{'autoconfigure'};
+   $autoconfigure = 1 if (!defined $autoconfigure);
+   my $protected = $arghash{'protected'};
+
+   # file label to write text into.
+   my $filenumber = $arghash{'file'};
+   $filenumber = "0" if !defined $filenumber;
+   die "invalid file label" if !_IsValidFileLabel($filenumber);
+
+   # The text that should actually be displayed.
+   # Allowable to be undef or empty, when the textfile should be erased.
+   my $text = $arghash{'rawtext'};
+   $text = "" if !defined $text;
+
+
+   # format the command buffer and send it.
+   my $rawcommand = _CommandSetText($filenumber, $text);
+   if ($autoconfigure && $filenumber ne '0') {
+      $rawcommand = _CommandSetMemoryConfiguration(
+            $filenumber, 'text', $protected, length $text, 0, 0) .
+            $rawcommand;
+   }
+   $self->_SendRawCommand($rawcommand);
+}
+
+
+
 
 # static member to translate a textual "mode" string into the sign-native
 # mode identifier that is used within commands sent directly to the sign.
@@ -615,6 +677,24 @@ sub SynchronizeGMT {
 }
 
 
+=item $sign->SoftReset();
+
+Sends a soft-reset to the sign.  No persisted data is erased in a
+soft-reset.  Immediately following the reset, the sign will display its
+ROM version, memory size, and other factory-determined values, before
+resuming display of its text files.  Performing a soft-reset will cause
+the sign to forget the current time and date.  It is not normally necessary
+to invoke this method.
+
+=cut
+sub SoftReset {
+   my $self = shift || die "no self";
+   my $rawcommand = _CommandSoftReset();
+   $self->_SendRawCommand($rawcommand);
+}
+
+
+
 # Returns the contents of a given text file stored on the sign.
 #sub ReadTextFile {
 #   my $self = shift || die "no self";
@@ -634,9 +714,9 @@ sub SynchronizeGMT {
 
 =head1 SEE ALSO
 
-See F<http://www.ams-i.com/> for details about the Adaptive LED sign
-product line and other technical specifications about the communications
-protocol used with their products.
+See F<http://www.ams-i.com/> for details about the Adaptive product lines
+and other technical specifications about the communications protocol used
+with their products.
 
 =head1 COPYRIGHT
 
