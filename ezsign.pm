@@ -1,7 +1,7 @@
 # Perl package to permit the controlling of Adaptive scrolling LED displays.
 # Visit http://www.ams-i.com/ for information about their products.
 #
-# $Id: ezsign.pm,v 1.6 2001/11/12 16:56:39 jlawson Exp $
+# $Id: ezsign.pm,v 1.7 2003/01/24 00:57:57 jlawson Exp $
 #
 # Win32::SerialPort and Device::SerialPort can both be obtained from
 #     http://members.aol.com/Bbirthisel/alpha.html
@@ -94,7 +94,7 @@ use vars qw($VERSION $OS_win $Debugging
 
 
 # The version number of the package is derived from the RCS file version.
-$VERSION = sprintf("%d.%02d", q$Revision: 1.6 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.7 $ =~ /(\d+)\.(\d+)/);
 
 # Load the appropriate package for serial port communications.
 BEGIN {
@@ -308,7 +308,7 @@ sub _CommandSetDayOfWeek {
 
 sub _CommandSetDate {
    my ($mon, $mday, $year) = @_;
-   return "E" . "\x3B" . sprintf("%02d%02d%02d", $mon, $mday, $year);
+   return "E" . "\x3B" . sprintf("%02d%02d%02d", $mon, $mday, $year % 100);
 }
 
 sub _CommandSetTimeFormat {
@@ -656,7 +656,7 @@ sub SynchronizeLocalTime {
    my @rawcommands = (
          _CommandSetTime($hour, $min),
          _CommandSetDayOfWeek($wday + 1) ,
-         _CommandSetDate($mon + 1, $mday, $year)
+         _CommandSetDate($mon + 1, $mday, $year + 1900)
    );
    $self->_SendRawCommand(@rawcommands);
 }
@@ -674,7 +674,7 @@ sub SynchronizeGMT {
    my @rawcommands = (
          _CommandSetTime($hour, $min),
          _CommandSetDayOfWeek($wday + 1) ,
-         _CommandSetDate($mon + 1, $mday, $year)
+         _CommandSetDate($mon + 1, $mday, $year % 100)
    );
    $self->_SendRawCommand(@rawcommands);
 }
