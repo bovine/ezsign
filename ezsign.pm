@@ -1,13 +1,72 @@
 # Perl package to permit the controlling of Adaptive scrolling LED displays.
 # Visit http://www.ams-i.com/ for information about their products.
 #
-# $Id: ezsign.pm,v 1.3 2001/11/12 02:47:42 jlawson Exp $
+# $Id: ezsign.pm,v 1.4 2001/11/12 06:17:31 jlawson Exp $
 #
 # Win32::SerialPort and Device::SerialPort can both be obtained from
 #     http://members.aol.com/Bbirthisel/alpha.html
 
 require 5.004;
 package ezsign;
+
+
+=head1 NAME
+
+ezsign - Library to permit basic controlling of scrolling alpha-numeric
+   LED displays that were produced by Adaptive Micro Systems, Inc.
+
+=head1 SYNOPSIS
+
+   use ezsign;
+
+   my $sign = ezsign->new("COM1");
+
+   # sends priority text message
+   $sign->SendTextSimple("hello world");
+
+   # also sends a priority text
+   $sign->SendTextSimple(mode => 'flash',
+                     text => "testing moo");
+
+   # clears the priority message
+   $sign->ClearPriorityText();
+
+   # sync time and send a priority message that displays the time/date.
+   $sign->SynchronizeLocalTime();
+   $sign->SendTextSimple("current date and time: \x0B8 \x13");
+
+
+=head1 DESCRIPTION
+
+Please note that only basic communications functionality is currently
+offered by this library.
+
+This library was designed and tested with a C<SERIES 300 ALPHA LED SIGN>
+which can be cheaply purchased for approximately $175 USD.  Compatibility
+with other Adaptive models should be possible but has not been tested.
+Although the Adapative communications protocol allows for multiple signs
+to be daisy-chained and assigned unique addresses so that they can be
+programmed individually or by groups, this library was not designed for
+that usage scenario.
+
+File label "0" is used for Priority messages and is pre-configured to
+use a set region of memory outside of the Memory Pool.  When data is
+written to the Priority message file, all other text files will stop
+being displayed.  When the Priority message file is erased, then normal
+display of other text files will resume.  The Priority message file
+is limited to 125 characters.
+
+Message files cannot be written to any files (other than "0" or "A")
+until memory is allocated for the file using the Set Memory Configuration
+command.
+
+=head1 METHODS
+
+The following methods are currently available:
+
+=over 4
+
+=cut
 
 use strict;
 use vars qw($VERSION $OS_win $Debugging
@@ -16,7 +75,7 @@ use vars qw($VERSION $OS_win $Debugging
 
 
 # The version number of the package is derived from the RCS file version.
-$VERSION = sprintf("%d.%02d", q$Revision: 1.3 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.4 $ =~ /(\d+)\.(\d+)/);
 
 # Load the appropriate package for serial port communications.
 BEGIN {
@@ -149,7 +208,16 @@ $ESCAPE = "\x1b";
    );
 
 
-# Constructor
+
+=item $sign = ezsign->new($port);
+
+Constructor for the communications object.  Returns a reference to a
+ezsign object.  On Windows, this will typically be "COM1" or "COM2"
+or similar.  On UNIX, this will be the serial port device file, such
+as "/dev/cua1"
+
+=cut
+
 sub new {
    my $class = shift || die "no class";
    my $PortName = shift || die "no port name specified";
@@ -178,6 +246,111 @@ sub new {
    return $self;
 }
 
+sub _CommandSetText {
+   my ($filenumber, $text) = @_;
+   return "A" . $filenumber . $text;
+}
+
+sub _CommandReadText {
+   my $filenumber = shift;
+   return "B" . $filenumber;
+}
+
+sub _CommandEnableSpeaker {
+   my $enable = shift;
+   return "E" . "\x21" . ($enable ? "00" : "FF");
+}
+
+sub _CommandSetMemoryConfiguration {
+   my ($filenumber, $filetype, $protected, $size, $extra1, $extra2) = @_;
+   if ($filetype eq 'text') {
+      return "E" . "\x24" . "A" . ($protected ? 'L' : 'U') .
+         sprintf("%04X%02X%02X", $size, $extra1, $extra2);
+   } elsif ($filetype eq 'string') {
+      return "E" . "\x24" . "B" . ($protected ? 'L' : 'U') .
+         sprintf("%04X", $size) . "0000";
+   } elsif ($filetype eq 'dots1') {    # monochrome
+      return "E" . "\x24" . "C" . ($protected ? 'L' : 'U') .
+         sprintf("%04X", $size) . "1000";
+   } elsif ($filetype eq 'dots3') {    # three-color
+      return "E" . "\x24" . "C" . ($protected ? 'L' : 'U') .
+         sprintf("%04X", $size) . "2000";
+   } elsif ($filetype eq 'dots8') {    # eight-color
+      return "E" . "\x24" . "C" . ($protected ? 'L' : 'U') .
+         sprintf("%04X", $size) . "4000";
+   }
+   return undef;
+}
+
+sub _CommandSetTime {
+   my ($hour, $min) = @_;
+   return "E" . "\x20" . sprintf("%02d%02d", $hour, $min);
+}
+
+sub _CommandSetDayOfWeek {
+   my $wday = shift;
+   return "E" . "\x26" . $wday;
+}
+
+sub _CommandSetDate {
+   my ($mon, $mday, $year) = @_;
+   return "E" . "\x3B" . sprintf("%02d%02d%02d", $mon, $mday, $year);
+}
+
+sub _CommandSetTimeFormat {
+   my $use24hour = shift;
+   return "E" . "\x27" . ($use24hour ? "M" : "S");
+}
+
+sub _CommandGenerateSpeakerTone {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandSetRunTimeTable {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandSoftReset {
+   return "E" . "\x2C";
+}
+
+sub _CommandSetRunSequence {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandSetRunDayTable {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandClearSerialErrorStatusRegister {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandSetCounter {
+   return undef;        # Not implemented yet.
+}
+
+sub _CommandWriteString {
+   my ($filenumber, $text) = @_;
+   return "G" . $filenumber . $text;
+}
+
+sub _CommandReadString {
+   my $filenumber;
+   return "H" . $filenumber;
+}
+
+sub _CommandWriteDotsPicture {
+   my ($filenumber, $text) = @_;
+   return "I" . $filenumber . $text;
+}
+
+sub _CommandReadDotsPicture {
+   my $filenumber = shift;
+   return "J" . $filenumber;
+}
+
+
 # Internal method use to transmit pre-formatted command strings.
 sub _SendRawCommand {    # (self, rawcommand)
    my $self = shift || die "no self";
@@ -194,7 +367,7 @@ sub _SendRawCommand {    # (self, rawcommand)
       # Format the actual string that will be sent, including the checksum.
       my $onepart = $STX . $rawcommand . $ETX;
       if ($checksum) {
-         $onepart .= ComputeChecksum($onepart);
+         $onepart .= _ComputeChecksum($onepart);
       }
       $output_string .= $onepart;
    }
@@ -213,7 +386,7 @@ sub _SendRawCommand {    # (self, rawcommand)
 }
 
 # Static method which returns a 4-digit hexadecimal checksum of a string.
-sub ComputeChecksum {
+sub _ComputeChecksum {
    my $string = shift;
    my $checksum = 0;
    foreach (split(//, $string)) {
@@ -222,13 +395,23 @@ sub ComputeChecksum {
    return sprintf("%04X", $checksum);
 }
 
-# Public method used to send new pre-formatted text files to the sign.
-# This method expects that the text buffer already contains the embedded
-# escape codes that indicate the position and mode for the text.
-#
-#  $sign->SendTextFilePreformatted( 'file' => 'A',
-#        'text' => $ESCAPE . "\x20\x62" . "hello world" );
-#
+
+=item $sign->SendTextFilePreformatted( 'file' => $file_id,
+                                       'rawtext' => $preformatted_text );
+
+Public method used to send new pre-formatted text files to the sign.
+This method expects that the C<$preformatted_text> already contains the embedded
+escape codes that indicate the position, mode, or other display attributes
+for the text.  The argument C<$file_id> must be a valid file label and must
+be large enough to store the entire block of text.
+
+Example:
+
+  $sign->SendTextFilePreformatted( 'file' => 'A',
+        'rawtext' => "\x1b\x20\x62" . "hello world" );
+
+=cut
+
 sub SendTextFilePreformatted {    # (self, arghash)
    my $self = shift || die "no self";
    my %arghash = @_;
@@ -236,7 +419,7 @@ sub SendTextFilePreformatted {    # (self, arghash)
    # file label to write text into.
    my $filenumber = $arghash{'file'};
    $filenumber = "0" if !defined $filenumber;
-   die "invalid file label" if !IsValidFileLabel($filenumber);
+   die "invalid file label" if !_IsValidFileLabel($filenumber);
 
    # The text that should actually be displayed.
    # Allowable to be undef or empty, when the textfile should be erased.
@@ -244,28 +427,42 @@ sub SendTextFilePreformatted {    # (self, arghash)
    $text = "" if !defined $text;
 
    # format the command buffer and send it.
-   my $rawcommand = "A" . $filenumber . $text;
+   my $rawcommand = _CommandSetText($filenumber, $text);
    $self->_SendRawCommand($rawcommand);
 }
 
 
-# Public method used to send new simple text files to the sign.
-# Simple text files use the same formatting mode for the entire text.
-# If the file/mode/position arguments are omitted then the following
-# defaults are assumed:
-#      no file specified; destination file '0' (priority message).
-#      no display mode; random 'AUTOMODE' should be used.
-#      no position; fill screen 'FILL' should be used.
-#
-#  $sign->SendTextSimple("testing2");
-#
-#  $sign->SendTextSimple(mode => 'flash', text => "testing moo");
-#
-#  $sign->SendTextSimple('position' => 'sparkle',
-#                       'file' => 'B',
-#                       'mode' => 'flash',
-#                       'text' => "new message");
-#
+
+=item $sign->SendTextSimple(...);
+
+Public method used to send new simple text files to the sign.
+Simple text files use the same formatting mode for the entire text.
+This method can accept either a single text string, or an argument
+hash that allows attributes to optionally be specified for the text.
+
+If the file/mode/position arguments are omitted then the following
+defaults are assumed:
+     no file specified; destination file '0' (priority message).
+     no display mode; random 'AUTOMODE' should be used.
+     no position; fill screen 'FILL' should be used.
+
+Note that sending a priority message will prevent all other text messages
+stored on the sign from being displayed until the C<ezsign::ClearPriorityText>
+method is called.
+
+Examples:
+
+  $sign->SendTextSimple("testing2");
+
+  $sign->SendTextSimple(mode => 'flash', text => "testing moo");
+
+  $sign->SendTextSimple('position' => 'sparkle',
+                       'file' => 'B',
+                       'mode' => 'flash',
+                       'text' => "new message");
+
+=cut
+
 sub SendTextSimple {    # (self, arghash)
    my $self = shift || die "no self";
    my %arghash;
@@ -278,14 +475,14 @@ sub SendTextSimple {    # (self, arghash)
    # file label to write text into.
    my $filenumber = $arghash{'file'};
    $filenumber = "0" if !defined $filenumber;      # assume priority file
-   die "invalid file label" if !IsValidFileLabel($filenumber);
+   die "invalid file label" if !_IsValidFileLabel($filenumber);
 
    # position and size of text on sign.
-   my $position = TranslatePosition($arghash{'position'}, 'FILL');
+   my $position = _TranslatePosition($arghash{'position'}, 'FILL');
    die "invalid position" if !defined $position;
 
    # display mode that should be used to draw the text.
-   my $displaymode = TranslateMode($arghash{'mode'}, 'AUTOMODE');
+   my $displaymode = _TranslateMode($arghash{'mode'}, 'AUTOMODE');
    die "invalid mode" if !defined $displaymode;
 
    # the text that should actually be displayed.
@@ -300,7 +497,7 @@ sub SendTextSimple {    # (self, arghash)
 
 # static member to translate a textual "mode" string into the sign-native
 # mode identifier that is used within commands sent directly to the sign.
-sub TranslateMode {
+sub _TranslateMode {
    my ($modestr, $defaultstr) = @_;
    if (defined $modestr) {
       my $newmode = $validmodes{$modestr} || $validmodes{uc $modestr};
@@ -317,7 +514,7 @@ sub TranslateMode {
 
 # static member to translate a textual "position" string into the sign-native
 # mode identifier that is used within commands sent directly to the sign.
-sub TranslatePosition {
+sub _TranslatePosition {
    my ($positionstr, $defaultstr) = @_;
    if (defined $positionstr) {
       my $newposition = $validpositions{$positionstr} || $validpositions{uc $positionstr};
@@ -335,48 +532,84 @@ sub TranslatePosition {
 # static member to test whether a "file label" is valid.  The sign natively
 # uses "file labels" to select which storage slot should be used to save a
 # message that is being transmitted to it.
-sub IsValidFileLabel {
+sub _IsValidFileLabel {
    my $filelabel = shift;
    return ($filelabel =~ m/^[\x20-\x7E]$/);
 }
 
 
-# Erases a text file that was previously sent to the device.
+=item $sign->ClearTextFile($filelabel);
+
+Erases a text file that was previously sent to the device.
+
+Examples:
+
+  $sign->ClearTextFile("A");
+
+=cut
+
 sub ClearTextFile {
    my $self = shift || die "no self";
    my $textfile = shift;
    $self->SendTextFilePreformatted('file' => $textfile, 'rawtext' => '');
 }
 
-# Erases the priority text file on the device, allowing other
-# text files to be displayed at will.
+
+
+=item $sign->ClearPriorityText();
+
+Erases the priority text file on the device, allowing other
+text files to be displayed at will.  This method is a shorthand for calling
+C<ezsign::ClearTextFile> with an argument of "0".
+
+Examples:
+
+  $sign->ClearPriorityText();
+
+=cut
+
 sub ClearPriorityText {
    my $self = shift || die "no self";
    $self->ClearTextFile('0');
 }
 
 
-# Syncronize the clock on the sign to the current local time (timezone).
+
+=item $sign->SynchronizeLocalTime();
+
+Syncronize the clock on the sign to the current local time (timezone).
+The sign uses the time and date to schedule which messages should be
+displayed on specified days of the week and/or hours of the day.  The
+current time and date can also be incorporated into text messages by
+placing the appropriate escape codes within your text messages.
+
+=cut
+
 sub SynchronizeLocalTime {
    my $self = shift || die "no self";
    my ($min,$hour,$mday,$mon,$year,$wday) = (localtime)[1..6];
    my @rawcommands = (
-         "E" . "\x20" . sprintf("%02d%02d", $hour, $min),
-         "E" . "\x26" . ($wday + 1) ,
-         "E" . "\x3B" . sprintf("%02d%02d%02d", $mon + 1, $mday, $year)
+         _CommandSetTime($hour, $min),
+         _CommandSetDayOfWeek($wday + 1) ,
+         _CommandSetDate($mon + 1, $mday, $year)
    );
    $self->_SendRawCommand(@rawcommands);
 }
 
 
-# Syncronize the clock on the sign to the current time in GMT.
+=item $sign->SynchronizeGMT();
+
+Syncronize the clock on the sign to the current time in GMT.  See
+C<ezsign::SynchronizeLocalTime> for more information.
+
+=cut
 sub SynchronizeGMT {
    my $self = shift || die "no self";
    my ($min,$hour,$mday,$mon,$year,$wday) = (gmtime)[1..6];
    my @rawcommands = (
-         "E" . "\x20" . sprintf("%02d%02d", $hour, $min),
-         "E" . "\x26" . ($wday + 1) ,
-         "E" . "\x3B" . sprintf("%02d%02d%02d", $mon + 1, $mday, $year)
+         _CommandSetTime($hour, $min),
+         _CommandSetDayOfWeek($wday + 1) ,
+         _CommandSetDate($mon + 1, $mday, $year)
    );
    $self->_SendRawCommand(@rawcommands);
 }
@@ -387,11 +620,28 @@ sub SynchronizeGMT {
 #   my $self = shift || die "no self";
 #   my $filenumber = shift;
 #   $filenumber = "0" if !defined $filenumber;
-#   die "invalid file label" if !IsValidFileLabel($filenumber);
-#   my $rawcommand = "B" . $filenumber;
+#   die "invalid file label" if !_IsValidFileLabel($filenumber);
+#   my $rawcommand = _CommandReadText($filenumber);
 #   $self->_SendRawCommand($rawcommand);
 #}
 
 
+
 1;
+
+
+=back
+
+=head1 SEE ALSO
+
+See F<http://www.ams-i.com/> for details about the Adaptive LED sign
+product line and other technical specifications about the communications
+protocol used with their products.
+
+=head1 COPYRIGHT
+
+This library is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+=cut
 
