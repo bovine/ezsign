@@ -1,5 +1,5 @@
 #
-# $Id: ezsign.pm,v 1.1 2001/11/11 22:40:28 jlawson Exp $
+# $Id: ezsign.pm,v 1.2 2001/11/12 00:45:15 jlawson Exp $
 #
 # Win32::SerialPort and Device::SerialPort can both be obtained from
 #     http://members.aol.com/Bbirthisel/alpha.html
@@ -8,11 +8,12 @@ require 5.004;
 package ezsign;
 
 use strict;
-use vars qw($VERSION $OS_win %validpositions %validmodes);
+use vars qw($VERSION $OS_win %validpositions %validmodes
+            $SOH $STX $ETX $EOT $ESCAPE );
 
 
 # The version number of the package is derived from the RCS file version.
-$VERSION = sprintf("%d.%02d", q$Revision: 1.1 $ =~ /(\d+)\.(\d+)/);
+$VERSION = sprintf("%d.%02d", q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/);
 
 # Load the appropriate package for serial port communications.
 BEGIN {
@@ -26,6 +27,15 @@ BEGIN {
       die "$@\n" if ($@);
    }
 } # End BEGIN
+
+
+
+# Special command characters used in the formation of commands.
+$SOH = "\x01";    # start of header
+$STX = "\x02";    # start of transmission
+$ETX = "\x03";    # end of text (checksum follows)
+$EOT = "\x04";    # end of transmission
+$ESCAPE = "\x1b";
 
 
 # Although the position is only honored on multi-line displays, it must
@@ -104,31 +114,88 @@ sub new {
 sub _SendRawCommand {    # (self, rawcommand)
    my $self = shift || die "no self";
    my $rawcommand = shift;
+   my $checksum = shift || 1;
    die "no raw command" if !length($rawcommand);
-
-   my $SOH = "\x01";    # start of header
-   my $STX = "\x02";    # start of transmission
-   my $EOT = "\x04";    # end of transmission
 
    my $signtype = 'Z';        # any sign type
    my $signaddress = '00';    # broadcast to all
 
+   # Format the actual string that will be sent, including the checksum.
    my $output_string = ( "\x00" x 20 ) . $SOH . $signtype .
-         $signaddress . $STX . $rawcommand . $EOT;
+         $signaddress . $STX . $rawcommand;
+   if ($checksum) {
+      my $temp = $STX . $rawcommand . $ETX;
+      $output_string .= $ETX . ComputeChecksum($temp) . $EOT;
+   } else {
+      $output_string .= $EOT;
+   }
 
    my $count_out = $self->{'PortObj'}->write($output_string);
    warn "write failed\n"         unless ($count_out);
    warn "write incomplete\n"     if ( $count_out != length($output_string) );
 }
 
+# Static method which returns a 4-digit hexadecimal checksum of a string.
+sub ComputeChecksum {
+   my $string = shift;
+   my $checksum = 0;
+   foreach (split(//, $string)) {
+      $checksum += ord $_;
+   }
+   return sprintf("%04X", $checksum);
+}
 
-# Public method used to send new text files to the sign.
-sub SendTextFile {    # (self, arghash)
+# Public method used to send new pre-formatted text files to the sign.
+# This method expects that the text buffer already contains the embedded
+# escape codes that indicate the position and mode for the text.
+#
+#  $sign->SendTextFilePreformatted( 'file' => 'A',
+#        'text' => $ESCAPE . "\x20\x62" . "hello world" );
+#
+sub SendTextFilePreformatted {    # (self, arghash)
    my $self = shift || die "no self";
    my %arghash = @_;
 
    # file label to write text into.
-   my $filenumber = $arghash{'textfile'};
+   my $filenumber = $arghash{'file'};
+   $filenumber = "0" if !defined $filenumber;
+   die "invalid file label" if !IsValidFileLabel($filenumber);
+
+   # the text that should actually be displayed.
+   my $text = $arghash{'rawtext'};
+   die "no rawtext supplied" if not defined $text or !length $text;
+
+   # format the command buffer and send it.
+   my $rawcommand = "A" . $filenumber . $text;
+   $self->_SendRawCommand($rawcommand);
+}
+
+
+# Public method used to send new simple text files to the sign.
+# Simple text files use the same formatting mode for the entire text.
+# If the file, mode, or position arguments are omitted then defaults
+# are assumed.
+#
+#  $sign->SendTextSimple("testing2");
+#
+#  $sign->SendTextSimple(mode => 'flash', text => "testing moo");
+#
+#  $sign->SendTextSimple('position' => 'sparkle',
+#                       'file' => 'B',
+#                       'mode' => 'flash',
+#                       'text' => "new message");
+#
+sub SendTextSimple {    # (self, arghash)
+   my $self = shift || die "no self";
+   my %arghash;
+   if (scalar(@_) > 1 || ref $_ eq 'HASH') {
+      %arghash = @_;
+   } else {
+      $arghash{'text'} = shift;
+   }
+
+   # file label to write text into.
+   my $filenumber = $arghash{'file'};
    $filenumber = "0" if !defined $filenumber;
    die "invalid file label" if !IsValidFileLabel($filenumber);
 
@@ -145,21 +212,10 @@ sub SendTextFile {    # (self, arghash)
    die "no text supplied" if not defined $text or !length $text;
 
    # format the command buffer and send it.
-   my $ESCAPE = "\x1b";
-   my $rawcommand = "A" . $filenumber . $ESCAPE .  $position . $displaymode . $text;
-   $self->_SendRawCommand($rawcommand);
+   my $rawtext = $ESCAPE .  $position . $displaymode . $text;
+   $self->SendTextFilePreformatted( 'file' => $filenumber,
+                                    'rawtext' => $rawtext);
 }
-
-
-# Public method used to send new text files to the sign.
-# The mode, position, and file number are defaulted.
-sub SendTextSimple {  # (self, text)
-   my $self = shift || die "no self";
-   my $text = shift;
-
-   $self->SendTextFile('text' => $text );
-}
-
 
 # static member to translate a textual "mode" string into the sign-native
 # mode identifier that is used within commands sent directly to the sign.
@@ -168,6 +224,7 @@ sub TranslateMode {
    if (defined $modestr) {
       my $newmode = $validmodes{$modestr} || $validmodes{uc $modestr};
       return $newmode if (defined $newmode);
+      warn "mode \"$modestr\" was not recognized.";
    }
    if (defined $defaultstr) {
       my $newmode = $validmodes{$defaultstr} || $validmodes{uc $defaultstr};
@@ -184,6 +241,7 @@ sub TranslatePosition {
    if (defined $positionstr) {
       my $newposition = $validpositions{$positionstr} || $validpositions{uc $positionstr};
       return $newposition if (defined $newposition);
+      warn "position \"$positionstr\" was not recognized.";
    }
    if (defined $defaultstr) {
       my $newposition = $validpositions{$defaultstr} || $validpositions{uc $defaultstr};
@@ -200,6 +258,17 @@ sub IsValidFileLabel {
    my $filelabel = shift;
    return ($filelabel =~ m/^[\x20-\x7E]$/);
 }
+
+
+# Returns the contents of a given text file stored on the sign.
+#sub ReadTextFile {
+#   my $self = shift || die "no self";
+#   my $filenumber = shift;
+#   $filenumber = "0" if !defined $filenumber;
+#   die "invalid file label" if !IsValidFileLabel($filenumber);
+#   my $rawcommand = "B" . $filenumber;
+#   $self->_SendRawCommand($rawcommand);
+#}
 
 
 1;
