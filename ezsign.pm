@@ -421,6 +421,9 @@ Simple text files use the same formatting mode for the entire text.
 This method can accept either a single text string, or an argument
 hash that allows attributes to optionally be specified for the text.
 
+Attributes can also be specified within the text by using the symbolic
+attribute name in the following syntax: #{ATTRIBUTE_NAME}
+
 If the file/mode/position arguments are omitted then the following
 defaults are assumed:
      no file specified; destination file '0' (priority message).
@@ -436,6 +439,8 @@ Examples:
   $sign->SendTextSimple("testing2");
 
   $sign->SendTextSimple(mode => 'flash', text => "testing moo");
+
+  $sign->SendTextSimple(mode => 'flash', text => "time is #{CALL_TIME}");
 
   $sign->SendTextSimple('position' => 'sparkle',
                        'file' => 'B',
@@ -472,6 +477,7 @@ sub SendTextSimple {    # (self, arghash)
    # the text that should actually be displayed.
    my $text = $arghash{'text'};
    die "no text supplied" if not defined $text or !length $text;
+   $text =~ s/\#\{([A-Z0-9_]+)\}/$validattributes{$1}/ge;
 
    # format the command buffer and send it.
    my $rawtext = $ESCAPE .  $position . $displaymode . $text;
