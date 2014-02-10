@@ -1,4 +1,4 @@
-#!c:\perl\bin\perl.exe
+#!/usr/bin/perl
 
 use CGI::Carp qw(fatalsToBrowser);
 use CGI qw/:standard/;
@@ -7,13 +7,16 @@ use ezsign;
 use strict;
 
 
+#use constant SIGNPORT => 'COM2';
+use constant SIGNPORT => '/dev/ttyUSB0';
+
 
 my $message = param('text');
 my $mode = param('mode') || 'AUTOMODE';
 if (!defined $message) {
     printform();
 } else {
-    my $sign = ezsign->new("COM2");
+    my $sign = ezsign->new(SIGNPORT);
     $sign->SendTextSimple('text' => $message,
                         'mode' => $mode);
     printsuccess();
