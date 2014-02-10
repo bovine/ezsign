@@ -1,10 +1,3 @@
-# Perl package to permit the controlling of Adaptive scrolling LED displays.
-# Visit http://www.ams-i.com/ for information about their products.
-#
-# $Id: ezsign.pm,v 1.7 2003/01/24 00:57:57 jlawson Exp $
-#
-# Win32::SerialPort and Device::SerialPort can both be obtained from
-#     http://members.aol.com/Bbirthisel/alpha.html
 
 require 5.004;
 package ezsign;
